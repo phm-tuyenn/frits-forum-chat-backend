@@ -1,54 +1,49 @@
 var express = require('express');
 var router = express.Router();
-var fs = require("fs")
-var { join } = require("path")
-
-let file = join(process.cwd(), "./data/chat.json")
+var { kv } = require('@vercel/kv');
 
 router.get('/', function(req, res) {
   res.send({"version": "dev", "status": "dev"});
 });
 
-router.get('/get', function(req, res) {
-  res.send(JSON.parse(fs.readFileSync(file, "utf-8")));
+router.get('/get', async function(req, res) {
+  res.send(await kv.lrange('chat', 0, -1));
 });
 
-router.post('/post', function(req, res) {
-  let data = JSON.parse(fs.readFileSync(file, "utf-8"));
+router.post('/post', async function(req, res) {
   var lt = /</g, 
     gt = />/g, 
     ap = /'/g, 
     ic = /"/g;
   let message = req.body.message.toString().replace(lt, "&lt;").replace(gt, "&gt;").replace(ap, "&#39;").replace(ic, "&#34;");
-  data = [{
+  let data = {
     "time": new Date(),
     "message": message,
     "user": req.body.user
-  }].concat(data);
-  fs.writeFileSync(file, JSON.stringify(data));
+  }
+  kv.lpush('chat', data)
   res.send({"status": "send-ok"});
 });
 
-router.put('/change', function(req, res) {
-  let data = JSON.parse(fs.readFileSync(file, "utf-8"));
+router.put('/change', async function(req, res) {
+  let data = await kv.lrange('chat', 0, -1);
   data.forEach((message, i) => {
     if (req.body.old.time === message.time && req.body.old.message === message.message && req.body.user === message.user) {
       message.message = req.body.new.message
       message.time = req.body.new.time
+      kv.lset('chat', i, message)
     }
   });
-  fs.writeFileSync(file, JSON.stringify(data));
   res.send({"status": "delete-ok"});
 });
 
-router.delete('/delete', function(req, res) {
-  let data = JSON.parse(fs.readFileSync(file, "utf-8"));
+router.delete('/delete', async function(req, res) {
+  let data = await kv.lrange('chat', 0, -1);
   data.forEach((message, i) => {
     if (req.body.time === message.time && req.body.message === message.message && req.body.user === message.user) {
-      data = data.slice(0, i).concat(data.slice(i + 1));
+      kv.lrem('chat', 1, message)
     }
   });
-  fs.writeFileSync(file, JSON.stringify(data));
   res.send({"status": "delete-ok"});
 });
 
